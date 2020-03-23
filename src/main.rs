@@ -1,13 +1,18 @@
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::fmt::Debug;
+use std::borrow::Borrow;
+use std::borrow::BorrowMut;
+
+type Link<T> = Option<Rc<ListElement<T>>>;
 
 struct ListElement<T> where T: Debug {
     value: T,
-    next: Box<Option<ListElement<T>>>,
+    next: Link<T>,
 }
 
 struct LinkedList<T> where T: Debug {
-    head: Option<ListElement<T>>,
+    head: Link<T>,
 }
 
 impl <T> LinkedList<T> where T: Debug {
@@ -20,29 +25,29 @@ impl <T> LinkedList<T> where T: Debug {
 
         let new_node = ListElement {
             value,
-            next: Box::new(self.head.take())
+            next: self.head.clone()
         };
     
-        self.head = Some(new_node);     
+        self.head = Some(Rc::new(new_node));     
     }
 
     fn pop(&mut self) -> Option<T> {
         self.head.take().map(|x| {
-            self.head = *x.next;
-            x.value
-        })
+            self.head = x.next.clone();
+            Rc::try_unwrap(x).ok().map(|x| x.value)
+        }).flatten()
     }
 
     pub fn iter(&self) -> Iter<'_, T> {
-        Iter { next: self.head.as_ref() }
+        Iter { next: self.head.as_ref().map(Rc::borrow) }
     }
 
 
     fn print(&mut self) {
         let mut curr = &self.head;
-        while let Some(ListElement {value, next}) = curr {
+        while let Some(ListElement {value, next}) = curr.as_ref().map(Rc::borrow)  {
             print!("{:?}", value);
-            curr = &**next;
+            curr = &next;
         }
         println!()
     }
@@ -56,7 +61,7 @@ impl<'a, T> Iterator for Iter<'a, T> where T: Debug {
     type Item = &'a T;
     fn next(&mut self) -> Option<Self::Item> {
         self.next.map(|node| {
-            self.next = node.next.as_ref().as_ref();
+            self.next = node.next.as_ref().map(Rc::borrow);
             &node.value
         })
     }
